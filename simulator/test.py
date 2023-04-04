@@ -47,7 +47,7 @@ def main():
         lib_code = infile.read()
     code += lib_code
 
-    js_file = os.path.splitext(os.path.split(args.stu_file)[0])[0] + ".js"
+    js_file = os.path.splitext(os.path.split(args.stu_file)[1])[0] + ".js"
     with open(js_file, "w") as outfile:
         outfile.write(code)
 
