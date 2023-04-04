@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html>
+	<head>
+		<title>Hack Emulator</title>
+
+		<script src="HackEmulator.js"></script>
+		<script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/0.7.2/p5.js"></script>
+		<script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/0.7.2/addons/p5.dom.js"></script>
+		<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+
+
+		<script src="sketch.js"></script>
+	</head>
+
+  <body>
+    <div id="canvas"></div>
+    <input type="file" id="fileInput" accept=".jack" multiple=true>
+    <button id="execute" disabled>Execute</button>
+    <button id="reset" disabled>Reset</button>
+    <br>
+    Program Name: <input type="text" id="progName" value="main">
+    <button id="vmCode" disabled>Get VM Code</button>
+    <button id="assembly" disabled>Get Assembly</button>
+    <button id="machineCode" disabled>Get Machine Code</button>
+    <div>
+      Program Speed: <input type="range" id="speed" min="5000" max="10000000"
+      value="10000000">
+    </div>
+    <script src="https://rawgit.com/bahmutov/console-log-div/master/console-log-div.js"></script>
+    <style>
+      .console-log-div {
+        width: 512px;
+      }
+    </style>
+  </body>
+
+</html>

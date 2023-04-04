@@ -1,0 +1,7 @@
+/*.o
+/compiler
+/lexer.cc
+/parser.hh
+/parser.cc
+/parser.output
+/location.hh

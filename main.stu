@@ -1,0 +1,491 @@
+const STORAGE_SIZE = 48;
+const NUM_DIGITS = 24;
+const NUM_DISPLAY_DIGITS = 12;
+const LAST_INTEGER_POS = 12;
+const FIRST_DECIMAL_POS = 11;
+// Display goes from memory address 16384 to 16396 (inclusive), from least
+// significant digit to most significant digit
+const DISPLAY = 16384;
+const KEY = 16397;
+const KEY_ADD = 10;
+const KEY_SUB = 11;
+const KEY_MUL = 12;
+const KEY_DIV = 13;
+const KEY_SQRT = 14;
+const KEY_EQUAL = 15;
+const KEY_CLEAR = 16;
+const KEY_POINT = 17;
+const KEY_NEG = 18;
+const KEY_BLANK = 19;
+const OP_BLANK = 0;
+const OP_ADD = 1;
+const OP_SUB = 2;
+const OP_MUL = 3;
+const OP_DIV = 4;
+const OP_SQRT = 5;
+const SEG_A = 1;
+const SEG_B = 2;
+const SEG_C = 4;
+const SEG_D = 8;
+const SEG_E = 16;
+const SEG_F = 32;
+const SEG_G = 64;
+const SEG_H = 128;
+
+var stored, storedSign;
+var current, currentSign;
+var tmp, tmpSign;
+var tmp2;
+var inputIntPart, firstIntDigit, decimalPos, lastOp;
+var error;
+var heapPointer;
+var lastKey;
+
+function zeroAllDigits(x) {
+    var i;
+
+    for (i = 0; i < STORAGE_SIZE; i = i + 1) {
+        x[i] = 0;
+    }
+}
+
+function cmpLessThan(x, y) {
+    var i;
+
+    for (i = NUM_DIGITS - 1; i >= 0; i = i - 1) {
+        if (x[i] < y[i]) {
+            return true;
+        } elif (x[i] > y[i]) {
+            return false;
+        }
+    }
+    return false;
+}
+
+function add(z, x, xSign, y, ySign) {
+    var i, d, carry, t, zSign;
+
+    carry = 0;
+    if (xSign == ySign) {
+        zSign = xSign;
+        for (i = 0; i < NUM_DIGITS; i = i + 1) {
+            d = x[i] + y[i] + carry;
+            if (d >= 10) {
+                d = d - 10;
+                carry = 1;
+            } else {
+                carry = 0;
+            }
+            z[i] = d;
+        }
+        if (carry > 0) {
+            error = true;
+        }
+    } else {
+        if (cmpLessThan(x, y)) {
+            zSign = ySign;
+            t = x;
+            x = y;
+            y = t;
+        } else {
+            zSign = xSign;
+        }
+
+        for (i = 0; i < NUM_DIGITS; i = i + 1) {
+            d = x[i] - y[i] + carry;
+            if (d < 0) {
+                d = d + 10;
+                carry = -1;
+            } else {
+                carry = 0;
+            }
+            z[i] = d;
+        }
+    }
+
+    return zSign;
+}
+
+function runAdd() {
+    tmpSign = add(tmp, stored, storedSign, current, currentSign);
+}
+
+function runSub() {
+    currentSign = !currentSign;
+    runAdd();
+}
+
+function runMul() {
+    var i, j, d1, d2, d, carry;
+
+    tmpSign = storedSign != currentSign;
+
+    zeroAllDigits(tmp);
+    for (i = 0; i < NUM_DIGITS; i = i + 1) {
+        for (j = 0; j < NUM_DIGITS; j = j + 1) {
+            d1 = stored[i];
+            d2 = current[j];
+            d = tmp[i + j];
+            carry = tmp[i + j + 1];
+
+            if (d1 & 1) {
+                d = d + d2;
+            }
+            d2 = d2 + d2;
+            if (d1 & 2) {
+                d = d + d2;
+            }
+            d2 = d2 + d2;
+            if (d1 & 4) {
+                d = d + d2;
+            }
+            d2 = d2 + d2;
+            if (d1 & 8) {
+                d = d + d2;
+            }
+
+            while (d >= 10) {
+                carry = carry + 1;
+                d = d - 10;
+            }
+            tmp[i + j] = d;
+            tmp[i + j + 1] = carry;
+        }
+    }
+
+    for (i = NUM_DIGITS + NUM_DISPLAY_DIGITS; i < STORAGE_SIZE; i = i + 1) {
+        if (tmp[i] != 0) {
+            error = true;
+        }
+    }
+
+    for (i = 0; i < NUM_DIGITS; i = i + 1) {
+        tmp[i] = tmp[i + NUM_DISPLAY_DIGITS];
+    }
+}
+
+function shiftLeft(x) {
+    var j;
+
+    for (j = NUM_DIGITS - 1; j >= 0; j = j - 1) {
+        x[j + 1] = x[j];
+    }
+    x[0] = 0;
+}
+
+function shiftRight(x) {
+    var j;
+
+    for (j = 0; j < NUM_DIGITS; j = j + 1) {
+        x[j] = x[j + 1];
+    }
+    x[NUM_DIGITS] = 0;
+}
+
+function runDiv() {
+    var i, isZero, j, d;
+
+    isZero = true;
+    for (i = 0; i < NUM_DIGITS; i = i + 1) {
+        if (current[i] != 0) {
+            isZero = false;
+        }
+    }
+    if (isZero) {
+        error = true;
+        return;
+    }
+
+    tmpSign = storedSign != currentSign;
+
+    i = LAST_INTEGER_POS;
+    while (!cmpLessThan(stored, current)) {
+        shiftLeft(current);
+        i = i + 1;
+    }
+
+    zeroAllDigits(tmp);
+    for (i = i - 1; i >= 0; i = i - 1) {
+        if (i >= LAST_INTEGER_POS) {
+            shiftRight(current);
+        } else {
+            shiftLeft(stored);
+        }
+
+        d = 0;
+        while (!cmpLessThan(stored, current)) {
+            add(tmp2, stored, false, current, true);
+            for (j = 0; j < NUM_DIGITS; j = j + 1) {
+                stored[j] = tmp2[j];
+            }
+            d = d + 1;
+        }
+        tmp[i] = d;
+    }
+}
+
+function runLastOp() {
+    var t;
+
+    if (firstIntDigit) {
+        return;
+    }
+
+    if (lastOp == OP_ADD) {
+        runAdd();
+    } elif (lastOp == OP_SUB) {
+        runSub();
+    } elif (lastOp == OP_MUL) {
+        runMul();
+    } elif (lastOp == OP_DIV) {
+        runDiv();
+    } elif (lastOp == OP_SQRT) {
+        // TODO: implement square root
+    }
+
+    if (lastOp != OP_BLANK) {
+        t = current;
+        current = tmp;
+        tmp = t;
+        currentSign = tmpSign;
+    }
+
+    firstIntDigit = true;
+    inputIntPart = true;
+}
+
+function runClear() {
+    storedSign = false;
+    currentSign = false;
+    zeroAllDigits(stored);
+    zeroAllDigits(current);
+    inputIntPart = true;
+    firstIntDigit = true;
+    lastOp = OP_BLANK;
+    error = false;
+}
+
+function runPoint() {
+    if (inputIntPart) {
+        inputIntPart = false;
+        decimalPos = FIRST_DECIMAL_POS;
+    }
+}
+
+function runNeg() {
+    currentSign = !currentSign;
+}
+
+function runAddDigit(digit) {
+    var i, t;
+
+    if (firstIntDigit) {
+        t = stored;
+        stored = current;
+        current = t;
+        storedSign = currentSign;
+
+        zeroAllDigits(current);
+        currentSign = false;
+        firstIntDigit = false;
+    }
+
+    if (inputIntPart) {
+        if (current[NUM_DIGITS - 1] == 0) {
+            for (i = NUM_DIGITS - 1; i > LAST_INTEGER_POS; i = i - 1) {
+                current[i] = current[i - 1];
+            }
+            current[LAST_INTEGER_POS] = digit;
+        }
+    } elif (decimalPos >= 0) {
+        current[decimalPos] = digit;
+        decimalPos = decimalPos - 1;
+    }
+}
+
+function runCommand(key) {
+    if (error && key != KEY_CLEAR) {
+        return;
+    }
+
+    if (key == KEY_ADD) {
+        runLastOp();
+        lastOp = OP_ADD;
+    } elif (key == KEY_SUB) {
+        runLastOp();
+        lastOp = OP_SUB;
+    } elif (key == KEY_MUL) {
+        runLastOp();
+        lastOp = OP_MUL;
+    } elif (key == KEY_DIV) {
+        runLastOp();
+        lastOp = OP_DIV;
+    } elif (key == KEY_SQRT) {
+        // TODO: implement square root
+    } elif (key == KEY_EQUAL) {
+        runLastOp();
+        lastOp = OP_BLANK;
+    } elif (key == KEY_CLEAR) {
+        runClear();
+        lastOp = OP_BLANK;
+    } elif (key == KEY_POINT) {
+        runPoint();
+    } elif (key == KEY_NEG) {
+        runNeg();
+    } elif (key != KEY_BLANK) {
+        runAddDigit(key);
+    }
+}
+
+function digitToSegments(digit) {
+    var segments;
+
+    segments = 0;
+    if (digit != 1 && digit != 4) {
+        segments = segments | SEG_A;
+    }
+    if (digit != 5 && digit != 6) {
+        segments = segments | SEG_B;
+    }
+    if (digit != 2) {
+        segments = segments | SEG_C;
+    }
+    if (digit != 1 && digit != 4 && digit != 7) {
+        segments = segments | SEG_D;
+    }
+    if (digit == 0 || digit == 2 || digit == 6 || digit == 8) {
+        segments = segments | SEG_E;
+    }
+    if (digit != 1 && digit != 2 && digit != 3 && digit != 7) {
+        segments = segments | SEG_F;
+    }
+    if (digit != 0 && digit != 1 && digit != 7) {
+        segments = segments | SEG_G;
+    }
+
+    return segments;
+}
+
+function updateDisplay() {
+    var intDigits, decimalDigits, i, j;
+    var letterE, letterR, letterO;
+
+    if (error) {
+        letterE = SEG_A | SEG_D | SEG_E | SEG_F | SEG_G;
+        letterR = SEG_E | SEG_G;
+        letterO = SEG_C | SEG_D | SEG_E | SEG_G;
+        tmp2[NUM_DISPLAY_DIGITS] = letterE;
+        tmp2[NUM_DISPLAY_DIGITS - 1] = letterR;
+        tmp2[NUM_DISPLAY_DIGITS - 2] = letterR;
+        tmp2[NUM_DISPLAY_DIGITS - 3] = letterO;
+        tmp2[NUM_DISPLAY_DIGITS - 4] = letterR;
+        for (i = NUM_DISPLAY_DIGITS - 5; i >= 0; i = i - 1) {
+            tmp2[i] = 0;
+        }
+    } else {
+        intDigits = 0;
+        decimalDigits = 0;
+        for (i = LAST_INTEGER_POS; i < NUM_DIGITS; i = i + 1) {
+            if (current[i] != 0) {
+                intDigits = i - LAST_INTEGER_POS + 1;
+            }
+        }
+        for (i = FIRST_DECIMAL_POS; i >= 0; i = i - 1) {
+            if (current[i] != 0) {
+                decimalDigits = FIRST_DECIMAL_POS - i + 1;
+            }
+        }
+
+        if (intDigits == 0 && decimalDigits == 0) {
+            for (i = 1; i <= NUM_DISPLAY_DIGITS; i = i + 1) {
+                tmp2[i] = 0;
+            }
+            tmp2[0] = digitToSegments(0) | SEG_H;
+        } else {
+            for (i = 0; i <= NUM_DISPLAY_DIGITS; i = i + 1) {
+                tmp2[i] = 0;
+            }
+            if (currentSign) {
+                tmp2[NUM_DISPLAY_DIGITS] = SEG_G;
+            } else {
+                tmp2[NUM_DISPLAY_DIGITS] = 0;
+            }
+
+            if (intDigits + decimalDigits <= NUM_DISPLAY_DIGITS) {
+                tmp2[decimalDigits] = tmp2[decimalDigits] | SEG_H;
+                i = intDigits + decimalDigits - 1;
+            } else {
+                i = NUM_DISPLAY_DIGITS - intDigits;
+                tmp2[i] = tmp2[i] | SEG_H;
+                i = NUM_DISPLAY_DIGITS - 1;
+            }
+            for (j = LAST_INTEGER_POS + intDigits - 1; i >= 0; i = i - 1) {
+                tmp2[i] = tmp2[i] | digitToSegments(current[j]);
+                j = j - 1;
+            }
+        }
+    } 
+
+    for (i = 0; i <= NUM_DISPLAY_DIGITS; i = i + 1) {
+        DISPLAY[i] = tmp2[i];
+    }
+}
+
+function alloc(size) {
+    var ret;
+
+    ret = heapPointer;
+    heapPointer = heapPointer + size;
+    return ret;
+}
+
+function readKey() {
+    var currentKey, pressedKey;
+
+    currentKey = KEY[0];
+    if (lastKey != currentKey) {
+        pressedKey = currentKey;
+    } else {
+        pressedKey = KEY_BLANK;
+    }
+    lastKey = currentKey;
+
+    return pressedKey;
+}
+
+function main() {
+    // TODO: the compilation from the stupid language to the Jack programming
+    // language is mostly done. The following are the goals that are not yet
+    // completed:
+    // - Change the alloc syntax to manual allocation (manully assign the
+    //   variables to the correct addresses). Note that this needs to be checked
+    //   with the hack computer's stack address to make sure that they do not
+    //   overlap.
+    // - Check if the display and key memory address overlap with the hack
+    //   computer's stack or other memory spaces.
+    // - Change the code of test.py to accomodate the change to the alloc
+    //   syntax.
+    // - Copy the HackFPGA emulator here, change it to 16 bit, change it not to
+    //   include Jack OS, modify the screen to show the seven segment display,
+    //   and modify the key strokes to output the key codes here at the correct
+    //   memory location.
+    // - Push to GitHub as a different project.
+    // - Integrate this compiler with the modified emulator.
+    var pressedKey;
+
+    heapPointer = 2048;
+    stored = alloc(STORAGE_SIZE);
+    current = alloc(STORAGE_SIZE);
+    tmp = alloc(STORAGE_SIZE);
+    tmp2 = alloc(STORAGE_SIZE);
+
+    runClear();
+
+    lastKey = KEY_BLANK;
+    pressedKey = KEY_BLANK;
+    while (true) {
+        runCommand(pressedKey);
+        updateDisplay();
+        pressedKey = readKey();
+    }
+}
